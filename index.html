@@ -1,0 +1,460 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>California 3D — Terrain Atlas</title>
+  <link href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css" rel="stylesheet" />
+  <style>
+    :root {
+      --panel-bg: rgba(12, 16, 22, 0.82);
+      --panel-border: rgba(255, 255, 255, 0.12);
+      --accent: #f5b942;
+      --text: #e8ecf1;
+      --text-dim: #9aa5b1;
+    }
+
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    html, body { height: 100%; overflow: hidden; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      color: var(--text);
+      background: #0c1016;
+    }
+
+    #map { position: absolute; inset: 0; }
+
+    /* ---------- header ---------- */
+    .header {
+      position: absolute;
+      top: 20px;
+      left: 20px;
+      z-index: 10;
+      background: var(--panel-bg);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+      border: 1px solid var(--panel-border);
+      border-radius: 14px;
+      padding: 14px 18px;
+      max-width: 320px;
+    }
+
+    .header h1 {
+      font-size: 17px;
+      font-weight: 700;
+      letter-spacing: 0.02em;
+    }
+
+    .header h1 span { color: var(--accent); }
+
+    .header p {
+      margin-top: 4px;
+      font-size: 12px;
+      color: var(--text-dim);
+      line-height: 1.45;
+    }
+
+    /* ---------- fly-to chips ---------- */
+    .chips {
+      position: absolute;
+      bottom: 28px;
+      left: 50%;
+      transform: translateX(-50%);
+      z-index: 10;
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: center;
+      gap: 8px;
+      max-width: min(92vw, 860px);
+      padding: 10px 14px;
+      background: var(--panel-bg);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+      border: 1px solid var(--panel-border);
+      border-radius: 16px;
+    }
+
+    .chip {
+      border: 1px solid var(--panel-border);
+      background: rgba(255, 255, 255, 0.06);
+      color: var(--text);
+      font-size: 12.5px;
+      font-weight: 600;
+      padding: 7px 13px;
+      border-radius: 999px;
+      cursor: pointer;
+      transition: background 0.15s, border-color 0.15s, transform 0.1s;
+      white-space: nowrap;
+    }
+
+    .chip:hover { background: rgba(255, 255, 255, 0.14); transform: translateY(-1px); }
+
+    .chip.active {
+      background: var(--accent);
+      border-color: var(--accent);
+      color: #1a1408;
+    }
+
+    .chip.home::before { content: "⌂ "; }
+
+    .chip-divider {
+      width: 1px;
+      align-self: stretch;
+      background: var(--panel-border);
+      margin: 2px 4px;
+    }
+
+    /* ---------- location info card ---------- */
+    .info-card {
+      position: absolute;
+      top: 20px;
+      right: 20px;
+      z-index: 10;
+      background: var(--panel-bg);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+      border: 1px solid var(--panel-border);
+      border-radius: 14px;
+      padding: 14px 18px;
+      max-width: 280px;
+      opacity: 0;
+      transform: translateY(-6px);
+      transition: opacity 0.3s, transform 0.3s;
+      pointer-events: none;
+    }
+
+    .info-card.visible { opacity: 1; transform: translateY(0); }
+
+    .info-card h2 { font-size: 15px; font-weight: 700; }
+    .info-card .elev { font-size: 11px; color: var(--accent); font-weight: 600; margin-top: 2px; }
+    .info-card p { margin-top: 6px; font-size: 12px; color: var(--text-dim); line-height: 1.5; }
+
+    /* ---------- exaggeration control ---------- */
+    .terrain-ctl {
+      position: absolute;
+      right: 12px;
+      bottom: 110px;
+      z-index: 10;
+      background: var(--panel-bg);
+      backdrop-filter: blur(12px);
+      border: 1px solid var(--panel-border);
+      border-radius: 12px;
+      padding: 10px 12px;
+      font-size: 11px;
+      color: var(--text-dim);
+      text-align: center;
+    }
+
+    .terrain-ctl input { width: 90px; accent-color: var(--accent); display: block; margin: 6px auto 0; }
+
+    /* ---------- home marker ---------- */
+    .home-marker {
+      width: 22px;
+      height: 22px;
+      position: relative;
+      cursor: pointer;
+    }
+
+    .home-marker .dot {
+      position: absolute;
+      inset: 5px;
+      background: var(--accent);
+      border: 2px solid #fff;
+      border-radius: 50%;
+      box-shadow: 0 0 8px rgba(245, 185, 66, 0.9);
+    }
+
+    .home-marker .pulse {
+      position: absolute;
+      inset: 0;
+      border-radius: 50%;
+      background: rgba(245, 185, 66, 0.5);
+      animation: pulse 2s ease-out infinite;
+    }
+
+    @keyframes pulse {
+      0% { transform: scale(0.6); opacity: 0.9; }
+      100% { transform: scale(2.4); opacity: 0; }
+    }
+
+    .city-marker {
+      width: 10px;
+      height: 10px;
+      background: rgba(255, 255, 255, 0.9);
+      border: 1.5px solid rgba(0, 0, 0, 0.5);
+      border-radius: 50%;
+      cursor: pointer;
+    }
+
+    .maplibregl-popup-content {
+      background: var(--panel-bg);
+      color: var(--text);
+      border: 1px solid var(--panel-border);
+      border-radius: 10px;
+      padding: 8px 12px;
+      font-size: 12.5px;
+      font-weight: 600;
+      backdrop-filter: blur(8px);
+    }
+
+    .maplibregl-popup-tip { border-top-color: rgba(12, 16, 22, 0.82) !important; }
+
+    @media (max-width: 640px) {
+      .header { max-width: calc(100vw - 40px); }
+      .info-card { display: none; }
+      .terrain-ctl { display: none; }
+    }
+  </style>
+</head>
+<body>
+  <div id="map"></div>
+
+  <div class="header">
+    <h1>California <span>3D</span> Terrain Atlas</h1>
+    <p>Real elevation data over satellite imagery. Drag to rotate, right-drag (or two fingers) to tilt, scroll to zoom. Home base: Newark, CA.</p>
+  </div>
+
+  <div class="info-card" id="infoCard">
+    <h2 id="infoName"></h2>
+    <div class="elev" id="infoElev"></div>
+    <p id="infoDesc"></p>
+  </div>
+
+  <div class="terrain-ctl">
+    <label for="exag">Terrain ×<span id="exagVal">1.5</span></label>
+    <input type="range" id="exag" min="1" max="3" step="0.1" value="1.5" />
+  </div>
+
+  <div class="chips" id="chips"></div>
+
+  <script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
+  <script>
+    // ---------- destinations ----------
+    // camera: [lng, lat], zoom, pitch, bearing
+    const PLACES = [
+      {
+        id: 'newark', name: 'Newark (Home)', home: true, region: 'bay',
+        camera: { center: [-122.040, 37.53], zoom: 11.5, pitch: 60, bearing: -20 },
+        elev: '~10 ft', desc: 'Home base on the east shore of the South Bay, between the salt ponds of Don Edwards refuge and the Fremont hills.'
+      },
+      {
+        id: 'sf', name: 'San Francisco', region: 'bay',
+        camera: { center: [-122.4425, 37.7680], zoom: 12.2, pitch: 65, bearing: 30 },
+        elev: '0–925 ft', desc: 'The famous 7×7 — Twin Peaks, Mt. Davidson and the downtown grid draped over 40+ hills.'
+      },
+      {
+        id: 'goldengate', name: 'Golden Gate', region: 'bay',
+        camera: { center: [-122.4783, 37.8199], zoom: 13, pitch: 70, bearing: -60 },
+        elev: 'sea level', desc: 'The strait where the Pacific pours into the Bay, framed by the Marin Headlands and the Presidio.'
+      },
+      {
+        id: 'mttam', name: 'Mt. Tamalpais', region: 'bay',
+        camera: { center: [-122.5965, 37.9235], zoom: 12.5, pitch: 68, bearing: 140 },
+        elev: '2,574 ft', desc: 'Marin\'s sleeping lady — redwood canyons on the north side, sweeping Bay views from the East Peak.'
+      },
+      {
+        id: 'mtdiablo', name: 'Mt. Diablo', region: 'bay',
+        camera: { center: [-121.9146, 37.8816], zoom: 11.8, pitch: 65, bearing: -110 },
+        elev: '3,849 ft', desc: 'The East Bay\'s isolated summit — on a clear day you can see the Sierra crest and the Farallones from the top.'
+      },
+      {
+        id: 'sanjose', name: 'San José + Mt. Hamilton', region: 'bay',
+        camera: { center: [-121.7649, 37.3414], zoom: 11, pitch: 62, bearing: -80 },
+        elev: '4,265 ft', desc: 'Silicon Valley floor rising into the Diablo Range, topped by Lick Observatory on Mt. Hamilton.'
+      },
+      {
+        id: 'santacruz', name: 'Santa Cruz Mtns', region: 'norcal',
+        camera: { center: [-122.1000, 37.2000], zoom: 10.8, pitch: 62, bearing: -30 },
+        elev: '3,786 ft', desc: 'The redwood spine between the Bay and Monterey Bay — Big Basin, Castle Rock, and the fog line.'
+      },
+      {
+        id: 'napa', name: 'Napa Valley', region: 'norcal',
+        camera: { center: [-122.3300, 38.4400], zoom: 10.5, pitch: 60, bearing: 15 },
+        elev: 'valley floor', desc: 'Wine country between the Mayacamas and Vaca ranges, running north to Calistoga and Mt. St. Helena.'
+      },
+      {
+        id: 'pointreyes', name: 'Point Reyes', region: 'norcal',
+        camera: { center: [-122.8800, 38.0500], zoom: 10.8, pitch: 60, bearing: -45 },
+        elev: '1,407 ft', desc: 'A granite peninsula sliding north on the San Andreas fault — Tomales Bay traces the fault line exactly.'
+      },
+      {
+        id: 'tahoe', name: 'Lake Tahoe', region: 'norcal',
+        camera: { center: [-120.0324, 39.0968], zoom: 9.8, pitch: 60, bearing: -30 },
+        elev: '6,225 ft', desc: 'The Sierra\'s alpine jewel — 1,645 ft deep, ringed by 9–10k ft peaks. Emerald Bay is on the southwest shore.'
+      },
+      {
+        id: 'yosemite', name: 'Yosemite Valley', region: 'norcal',
+        camera: { center: [-119.5871, 37.7360], zoom: 12, pitch: 70, bearing: 100 },
+        elev: '4,000 ft floor', desc: 'Half Dome, El Capitan and 3,000-ft granite walls — glacier-carved and unmistakable in relief.'
+      },
+      {
+        id: 'shasta', name: 'Mt. Shasta', region: 'norcal',
+        camera: { center: [-122.1949, 41.3099], zoom: 10.2, pitch: 65, bearing: 45 },
+        elev: '14,179 ft', desc: 'A lone Cascade stratovolcano towering 10,000 ft over everything around it. Lonely as God, white as a winter moon.'
+      },
+      {
+        id: 'lassen', name: 'Lassen Peak', region: 'norcal',
+        camera: { center: [-121.5050, 40.4882], zoom: 10.8, pitch: 63, bearing: -20 },
+        elev: '10,457 ft', desc: 'The southernmost Cascade volcano — last erupted 1915–17, still steaming at Bumpass Hell.'
+      },
+      {
+        id: 'bigsur', name: 'Big Sur', region: 'socal',
+        camera: { center: [-121.7770, 36.3615], zoom: 11, pitch: 65, bearing: -120 },
+        elev: '5,155 ft', desc: 'The Santa Lucia Range diving straight into the Pacific — the steepest coastal gradient in the lower 48.'
+      },
+      {
+        id: 'whitney', name: 'Mt. Whitney', region: 'socal',
+        camera: { center: [-118.2923, 36.5785], zoom: 11, pitch: 68, bearing: -90 },
+        elev: '14,505 ft', desc: 'Highest point in the contiguous US — and only 85 miles from Badwater Basin, the lowest.'
+      },
+      {
+        id: 'deathvalley', name: 'Death Valley', region: 'socal',
+        camera: { center: [-116.8230, 36.2300], zoom: 9.5, pitch: 60, bearing: 0 },
+        elev: '−282 ft', desc: 'Badwater Basin, the lowest point in North America, walled in by the 11,000-ft Panamint Range.'
+      },
+      {
+        id: 'california', name: 'All California', region: 'state',
+        camera: { center: [-119.8, 37.2], zoom: 5.6, pitch: 45, bearing: 0 },
+        elev: '−282 to 14,505 ft', desc: 'The whole state in relief: Coast Ranges, Central Valley, Sierra Nevada, Cascades, Mojave.'
+      },
+    ];
+
+    // Bay Area city dots (label markers, not fly-to chips)
+    const CITY_DOTS = [
+      { name: 'Newark', lngLat: [-122.0402, 37.5297], home: true },
+      { name: 'San Francisco', lngLat: [-122.4194, 37.7749] },
+      { name: 'Oakland', lngLat: [-122.2712, 37.8044] },
+      { name: 'Berkeley', lngLat: [-122.2730, 37.8715] },
+      { name: 'San José', lngLat: [-121.8863, 37.3382] },
+      { name: 'Palo Alto', lngLat: [-122.1430, 37.4419] },
+      { name: 'Fremont', lngLat: [-121.9886, 37.5485] },
+      { name: 'Santa Cruz', lngLat: [-122.0308, 36.9741] },
+      { name: 'Napa', lngLat: [-122.2869, 38.2975] },
+      { name: 'Sacramento', lngLat: [-121.4944, 38.5816] },
+    ];
+
+    // ---------- map ----------
+    const TERRARIUM = 'https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{x}/{y}.png';
+
+    const map = new maplibregl.Map({
+      container: 'map',
+      center: PLACES[0].camera.center,
+      zoom: PLACES[0].camera.zoom,
+      pitch: PLACES[0].camera.pitch,
+      bearing: PLACES[0].camera.bearing,
+      maxPitch: 80,
+      attributionControl: { compact: true },
+      style: {
+        version: 8,
+        sources: {
+          satellite: {
+            type: 'raster',
+            tiles: ['https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}'],
+            tileSize: 256,
+            maxzoom: 19,
+            attribution: 'Imagery © Esri &amp; contributors · Terrain: Mapzen/AWS Open Data'
+          },
+          terrain: {
+            type: 'raster-dem',
+            tiles: [TERRARIUM],
+            encoding: 'terrarium',
+            tileSize: 256,
+            maxzoom: 13
+          },
+          hillshadeDem: {
+            type: 'raster-dem',
+            tiles: [TERRARIUM],
+            encoding: 'terrarium',
+            tileSize: 256,
+            maxzoom: 13
+          }
+        },
+        layers: [
+          { id: 'bg', type: 'background', paint: { 'background-color': '#0c1016' } },
+          { id: 'satellite', type: 'raster', source: 'satellite', paint: { 'raster-saturation': 0.05, 'raster-contrast': 0.05 } },
+          {
+            id: 'hillshade', type: 'hillshade', source: 'hillshadeDem',
+            paint: {
+              'hillshade-exaggeration': 0.35,
+              'hillshade-shadow-color': 'rgba(0, 0, 0, 0.45)',
+              'hillshade-highlight-color': 'rgba(255, 245, 220, 0.25)'
+            }
+          }
+        ],
+        // Custom sky/fog blend values black out the whole scene in MapLibre 4.7
+        // (see git history) — default sky renders fine, so leave it unset.
+        sky: {}
+      }
+    });
+
+    // Applying terrain via the style JSON races with the first render and can
+    // leave the canvas black — set it after the style is fully loaded instead.
+    map.on('load', () => {
+      map.setTerrain({ source: 'terrain', exaggeration: parseFloat(exag.value) });
+    });
+
+    map.addControl(new maplibregl.NavigationControl({ visualizePitch: true }), 'bottom-right');
+    map.addControl(new maplibregl.ScaleControl({ unit: 'imperial' }), 'bottom-left');
+
+    // ---------- markers ----------
+    CITY_DOTS.forEach(city => {
+      const el = document.createElement('div');
+      if (city.home) {
+        el.className = 'home-marker';
+        el.innerHTML = '<div class="pulse"></div><div class="dot"></div>';
+      } else {
+        el.className = 'city-marker';
+      }
+      new maplibregl.Marker({ element: el })
+        .setLngLat(city.lngLat)
+        .setPopup(new maplibregl.Popup({ offset: 14, closeButton: false }).setText(city.name))
+        .addTo(map);
+    });
+
+    // ---------- chips + info card ----------
+    const chipsEl = document.getElementById('chips');
+    const infoCard = document.getElementById('infoCard');
+
+    function showInfo(place) {
+      document.getElementById('infoName').textContent = place.name;
+      document.getElementById('infoElev').textContent = place.elev;
+      document.getElementById('infoDesc').textContent = place.desc;
+      infoCard.classList.add('visible');
+    }
+
+    let lastRegion = null;
+    PLACES.forEach(place => {
+      if (lastRegion && place.region !== lastRegion) {
+        const div = document.createElement('div');
+        div.className = 'chip-divider';
+        chipsEl.appendChild(div);
+      }
+      lastRegion = place.region;
+
+      const btn = document.createElement('button');
+      btn.className = 'chip' + (place.home ? ' home' : '');
+      btn.textContent = place.name;
+      btn.dataset.id = place.id;
+      btn.addEventListener('click', () => {
+        document.querySelectorAll('.chip').forEach(c => c.classList.remove('active'));
+        btn.classList.add('active');
+        map.flyTo({ ...place.camera, duration: 3500, essential: true });
+        showInfo(place);
+      });
+      chipsEl.appendChild(btn);
+    });
+
+    document.querySelector('.chip.home').classList.add('active');
+    showInfo(PLACES[0]);
+
+    // ---------- terrain exaggeration slider ----------
+    const exag = document.getElementById('exag');
+    exag.addEventListener('input', () => {
+      document.getElementById('exagVal').textContent = exag.value;
+      map.setTerrain({ source: 'terrain', exaggeration: parseFloat(exag.value) });
+    });
+  </script>
+</body>
+</html>
