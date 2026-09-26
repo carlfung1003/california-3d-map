@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <title>California 3D — Terrain Atlas</title>
   <link href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css" rel="stylesheet" />
   <style>
@@ -17,6 +17,11 @@
     * { margin: 0; padding: 0; box-sizing: border-box; }
 
     html, body { height: 100%; overflow: hidden; }
+    /* iOS Safari: a pull-down must not reload the map, and quick taps on
+       chips/controls must not double-tap-zoom the page. Pinch still works;
+       MapLibre keeps touch-action: none on its own canvas. */
+    html, body { overscroll-behavior-y: none; }
+    html, body, button, input, a { touch-action: manipulation; }
 
     body {
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
@@ -30,7 +35,7 @@
     .header {
       position: absolute;
       top: 20px;
-      left: 20px;
+      left: max(20px, env(safe-area-inset-left));
       z-index: 10;
       background: var(--panel-bg);
       backdrop-filter: blur(12px);
@@ -205,6 +210,39 @@
       .header { max-width: calc(100vw - 40px); }
       .info-card { display: none; }
       .terrain-ctl { display: none; }
+    }
+
+    /* Phones (portrait or landscape): one horizontally scrolling chip strip.
+       The centred box (left:50% + translateX) only gets half the screen as its
+       shrink-to-fit width, so on a phone the 17 chips stacked into a column
+       taller than the screen and the top ones (Newark, SF...) were unreachable. */
+    @media (max-width: 640px), (max-height: 500px) {
+      .chips {
+        left: max(10px, env(safe-area-inset-left));
+        right: max(10px, env(safe-area-inset-right));
+        bottom: max(12px, env(safe-area-inset-bottom));
+        transform: none;
+        max-width: none;
+        flex-wrap: nowrap;
+        justify-content: flex-start;
+        overflow-x: auto;
+        overscroll-behavior-x: contain;
+        scrollbar-width: none;
+        padding: 8px 10px;
+      }
+      .chips::-webkit-scrollbar { display: none; }
+      /* 44px finger target without changing the chip's look */
+      .chip { position: relative; }
+      .chip::after { content: ""; position: absolute; inset: -7px -4px; }
+      /* lift MapLibre's zoom/compass, scale and attribution above the strip */
+      .maplibregl-ctrl-bottom-left,
+      .maplibregl-ctrl-bottom-right { bottom: calc(max(12px, env(safe-area-inset-bottom)) + 50px); }
+      /* zoom/compass buttons are 29px; widen the hit area sideways (they are stacked) */
+      .maplibregl-ctrl-group button { position: relative; }
+      .maplibregl-ctrl-group button::after { content: ""; position: absolute; inset: 0 -8px; }
+      /* landscape phones still show the terrain slider: park it bottom-left,
+         above the scale bar, so it clears the lifted zoom controls */
+      .terrain-ctl { right: auto; left: max(12px, env(safe-area-inset-left)); bottom: calc(max(12px, env(safe-area-inset-bottom)) + 88px); }
     }
   </style>
 </head>
